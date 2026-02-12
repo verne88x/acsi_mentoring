@@ -33,7 +33,11 @@ export async function POST(req: Request) {
 
     if (!email) return NextResponse.json({ error: "Email required" }, { status: 400 });
 
-    const { data: invite, error: invErr } = await admin.auth.admin.inviteUserByEmail(email);
+const redirectTo =
+  process.env.NEXT_PUBLIC_SITE_URL || "https://acsi-mentoring.vercel.app";
+
+const { data: invite, error: invErr } = await admin.auth.admin.inviteUserByEmail(email, {
+  redirectTo,});
     if (invErr) return NextResponse.json({ error: invErr.message }, { status: 400 });
 
     const newUserId = invite.user?.id;
