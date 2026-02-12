@@ -12,7 +12,12 @@ async function requireAdmin(bearer: string | null) {
 
   const callerId = userRes.user.id;
 
-  const { data: prof, error: pErr } = await admin.from("profiles").select("role").eq("id", callerId).single();
+  const { data: prof, error: pErr } = await admin
+    .from("profiles")
+    .select("role")
+    .eq("id", callerId)
+    .single();
+
   if (pErr || !prof) throw new Error("Unauthorized");
   if (prof.role !== "acsi_admin") throw new Error("Forbidden");
 
@@ -31,32 +36,58 @@ export async function POST(req: Request) {
     const school_id = body.school_id ? String(body.school_id) : null;
     const member_role = body.member_role ? String(body.member_role) : null;
 
-    if (!email) return NextResponse.json({ error: "Email required" }, { status: 400 });
+    if (!email) {
+      return NextResponse.json({ error: "Email required" }, { status: 400 });
+    }
 
-const redirectTo =
-  process.env.NEXT_PUBLIC_SITE_URL || "https://acsi-mentoring.vercel.app";
+    // 👉 Invite redirect to proper auth callback
+    const base =
+      process.env.NEXT_PUBLIC_SITE_URL || "https://acsi-mentoring.vercel.app";
 
-const { data: invite, error: invErr } = await admin.auth.admin.inviteUserByEmail(email, {
-  redirectTo,});
-    if (invErr) return NextResponse.json({ error: invErr.message }, { status: 400 });
+    const redirectTo = `${base.replace(/\/$/, "")}/auth/callback`;
+
+    const { data: invite, error: invErr } =
+      await admin.auth.admin.inviteUserByEmail(email, {
+        redirectTo,
+      });
+
+    if (invErr) {
+      return NextResponse.json({ error: invErr.message }, { status: 400 });
+    }
 
     const newUserId = invite.user?.id;
-    if (!newUserId) return NextResponse.json({ error: "Invite failed" }, { status: 400 });
+    if (!newUserId) {
+      return NextResponse.json({ error: "Invite failed" }, { status: 400 });
+    }
 
+    // Upsert profile
     const { error: upErr } = await admin
       .from("profiles")
-      .upsert({ id: newUserId, email, full_name, role }, { onConflict: "id" });
+      .upsert(
+        { id: newUserId, email, full_name, role },
+        { onConflict: "id" }
+      );
 
-    if (upErr) return NextResponse.json({ error: upErr.message }, { status: 400 });
+    if (upErr) {
+      return NextResponse.json({ error: upErr.message }, { status: 400 });
+    }
 
+    // Assign to school (if provided)
     if (school_id) {
       const { error: mErr } = await admin
         .from("school_members")
         .upsert(
-          { school_id, user_id: newUserId, member_role: member_role || "mentor" },
+          {
+            school_id,
+            user_id: newUserId,
+            member_role: member_role || "mentor",
+          },
           { onConflict: "school_id,user_id" }
         );
-      if (mErr) return NextResponse.json({ error: mErr.message }, { status: 400 });
+
+      if (mErr) {
+        return NextResponse.json({ error: mErr.message }, { status: 400 });
+      }
     }
 
     return NextResponse.json({ ok: true, user_id: newUserId });
