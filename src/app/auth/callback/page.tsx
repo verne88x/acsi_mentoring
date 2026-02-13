@@ -12,8 +12,9 @@ export default function AuthCallback() {
     (async () => {
       try {
         const url = new URL(window.location.href);
-        const code = url.searchParams.get("code");
 
+        // 1) PKCE flow: ?code=...
+        const code = url.searchParams.get("code");
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) throw error;
@@ -21,6 +22,20 @@ export default function AuthCallback() {
           return;
         }
 
+        // 2) Verify flow: ?token=...&type=invite (or token_hash)
+        const type = url.searchParams.get("type");
+        const token = url.searchParams.get("token") || url.searchParams.get("token_hash");
+        if (type && token) {
+          const { error } = await supabase.auth.verifyOtp({
+            type: type as any,
+            token_hash: token,
+          });
+          if (error) throw error;
+          router.replace("/auth/set-password");
+          return;
+        }
+
+        // 3) Implicit flow: #access_token=...&refresh_token=...
         const hash = window.location.hash.replace("#", "");
         const params = new URLSearchParams(hash);
         const access_token = params.get("access_token");
